@@ -1,4 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useState } from "react";
+
+// ── Hardcoded endpoints ─────────────────────────────────────
+const WHEP_URL = "https://visiongate-whep.serveousercontent.com/camera/whep";
+const WS_URL   = "wss://visiongate-ws.serveousercontent.com";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
@@ -63,67 +67,6 @@ const styles = `
     text-transform: uppercase;
     color: var(--text-dim);
   }
-
-  .input-row {
-    display: flex;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-    margin-bottom: 8px;
-    transition: border-color 0.2s;
-  }
-  .input-row:focus-within { border-color: var(--border-active); }
-  .input-row:last-of-type { margin-bottom: 20px; }
-
-  .input-label {
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.15em;
-    color: var(--text-muted);
-    background: var(--surface);
-    padding: 0 14px;
-    display: flex;
-    align-items: center;
-    border-right: 1px solid var(--border);
-    white-space: nowrap;
-    user-select: none;
-    min-width: 52px;
-  }
-
-  .url-input {
-    flex: 1;
-    background: var(--surface);
-    border: none;
-    outline: none;
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 300;
-    padding: 12px 16px;
-    caret-color: var(--accent);
-  }
-  .url-input::placeholder { color: var(--text-muted); }
-  .url-input:disabled { opacity: 0.4; }
-
-  .action-btn {
-    background: transparent;
-    border: none;
-    border-left: 1px solid var(--border);
-    color: var(--text-dim);
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    padding: 0 18px;
-    cursor: pointer;
-    transition: color 0.15s, background 0.15s;
-    white-space: nowrap;
-  }
-  .action-btn:hover { color: var(--accent); background: var(--accent-dim); }
-  .action-btn.stop  { color: var(--danger); }
-  .action-btn.stop:hover { background: rgba(255,68,68,0.08); }
 
   .status-bar {
     display: flex;
@@ -274,7 +217,6 @@ const styles = `
   }
 `;
 
-// Stable color per label
 const labelColors = {};
 const palette = ["#00ff88","#00aaff","#ff6644","#ffcc00","#cc44ff","#ff44aa","#44ffee","#ff8800"];
 let ci = 0;
@@ -284,21 +226,19 @@ function colorFor(label) {
 }
 
 export default function StreamViewer() {
-  const [hlsUrl,      setHlsUrl]      = useState("http://localhost:8888/camera/index.m3u8");
-  const [wsUrl,       setWsUrl]       = useState("ws://localhost:8765");
-  const [streaming,   setStreaming]   = useState(false);
+  const [streamState, setStreamState] = useState("idle");  // idle | connecting | active | error
   const [wsConnected, setWsConnected] = useState(false);
-  const [videoError,  setVideoError]  = useState(false);
   const [detections,  setDetections]  = useState([]);
 
   const videoRef  = useRef(null);
   const canvasRef = useRef(null);
-  const hlsRef    = useRef(null);
+  const pcRef     = useRef(null);
   const wsRef     = useRef(null);
   const animRef   = useRef(null);
-  const bboxRef   = useRef([]);  // raw faces array, read directly by draw loop
+  const bboxRef   = useRef([]);
+  const wsAlive   = useRef(true);  // prevents reconnect loop after unmount
 
-  // ── Canvas draw loop (always running) ──────────────────────
+  // ── Canvas draw loop ────────────────────────────────────────
   useEffect(() => {
     function draw() {
       const canvas = canvasRef.current;
@@ -313,7 +253,6 @@ export default function StreamViewer() {
         const ctx = canvas.getContext("2d");
         ctx.clearRect(0, 0, cw, ch);
 
-        // bbox coords are normalized 0–1, so multiply directly by canvas size
         bboxRef.current.forEach(({ bbox, label, confidence }) => {
           if (!bbox) return;
           const [x, y, w, h] = bbox;
@@ -321,16 +260,13 @@ export default function StreamViewer() {
           const rw = w * cw, rh = h * ch;
           const color = colorFor(label);
 
-          // Fill tint
           ctx.fillStyle = color + "18";
           ctx.fillRect(rx, ry, rw, rh);
 
-          // Box stroke
           ctx.strokeStyle = color;
           ctx.lineWidth = 1.5;
           ctx.strokeRect(rx, ry, rw, rh);
 
-          // Corner accents
           const cs = Math.min(rw, rh, 12);
           ctx.lineWidth = 2;
           [[rx,ry],[rx+rw,ry],[rx,ry+rh],[rx+rw,ry+rh]].forEach(([cx,cy], i) => {
@@ -340,7 +276,6 @@ export default function StreamViewer() {
             ctx.stroke();
           });
 
-          // Label pill
           const conf = confidence > 0 ? ` ${Math.round(confidence*100)}%` : "";
           const tag  = label + conf;
           ctx.font = "500 10px 'IBM Plex Mono', monospace";
@@ -362,53 +297,77 @@ export default function StreamViewer() {
     return () => cancelAnimationFrame(animRef.current);
   }, []);
 
-  // ── HLS stream toggle ───────────────────────────────────────
-  const toggleStream = useCallback(async () => {
-    if (streaming) {
-      hlsRef.current?.destroy();
-      hlsRef.current = null;
-      if (videoRef.current) videoRef.current.src = "";
-      setStreaming(false);
-      setVideoError(false);
-      return;
-    }
+  // ── WebRTC — auto-connect on mount ──────────────────────────
+  useEffect(() => {
+    let pc;
 
-    setVideoError(false);
-    setStreaming(true);
-
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = hlsUrl;
-      video.play().catch(() => {});
-    } else {
+    async function startWebRTC() {
       try {
-        const { default: Hls } = await import("https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.mjs");
-        if (Hls.isSupported()) {
-          const hls = new Hls({ lowLatencyMode: true, backBufferLength: 4 });
-          hlsRef.current = hls;
-          hls.loadSource(hlsUrl);
-          hls.attachMedia(video);
-          hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) setVideoError(true); });
-          video.play().catch(() => {});
-        }
-      } catch { setVideoError(true); }
-    }
-  }, [streaming, hlsUrl]);
+        pc = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+        });
+        pcRef.current = pc;
 
-  // ── WebSocket toggle ────────────────────────────────────────
-  const toggleWs = useCallback(() => {
-    if (wsConnected) {
-      wsRef.current?.close();
-      setWsConnected(false);
-      bboxRef.current = [];
-      setDetections([]);
-      return;
+        pc.addTransceiver("video", { direction: "recvonly" });
+        pc.addTransceiver("audio", { direction: "recvonly" });
+
+        pc.ontrack = (e) => {
+          if (videoRef.current && e.streams[0]) {
+            videoRef.current.srcObject = e.streams[0];
+            videoRef.current.play().catch(() => {});
+            setStreamState("active");
+          }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          if (pc.iceConnectionState === "failed" ||
+              pc.iceConnectionState === "disconnected") {
+            setStreamState("error");
+          }
+        };
+
+        setStreamState("connecting");
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        const res = await fetch(WHEP_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/sdp",
+            //"serveo-skip-browser-warning": "true",
+          },
+          body: offer.sdp,
+        });
+
+        if (!res.ok) throw new Error(`WHEP ${res.status}`);
+
+        const sdpAnswer = await res.text();
+        await pc.setRemoteDescription({ type: "answer", sdp: sdpAnswer });
+
+      } catch (err) {
+        console.error("WebRTC error:", err);
+        setStreamState("error");
+      }
     }
 
-    try {
-      const ws = new WebSocket(wsUrl);
+    startWebRTC();
+
+    return () => {
+      pc?.close();
+      pcRef.current = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
+    };
+  }, []);
+
+  // ── WebSocket — auto-connect with reconnect ─────────────────
+  useEffect(() => {
+    wsAlive.current = true;
+
+    function connect() {
+      if (!wsAlive.current) return;
+
+      const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
       ws.onopen  = () => setWsConnected(true);
@@ -416,39 +375,28 @@ export default function StreamViewer() {
         setWsConnected(false);
         bboxRef.current = [];
         setDetections([]);
+        if (wsAlive.current) setTimeout(connect, 2000);
       };
-      ws.onerror = () => setWsConnected(false);
+      ws.onerror = () => ws.close();
 
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (data.type !== "bbox") return;  // ignore seek/other messages
+          if (data.type !== "bbox") return;
           const faces = data.faces || [];
-          bboxRef.current = faces;           // draw loop reads this directly
-          setDetections(faces);              // drives the detections panel
+          bboxRef.current = faces;
+          setDetections(faces);
         } catch {}
       };
-    } catch { setWsConnected(false); }
-  }, [wsConnected, wsUrl]);
+    }
 
-  // ── Cleanup ─────────────────────────────────────────────────
-  useEffect(() => {
+    connect();
+
     return () => {
-      hlsRef.current?.destroy();
+      wsAlive.current = false;
       wsRef.current?.close();
-      cancelAnimationFrame(animRef.current);
     };
   }, []);
-
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const onErr = () => setVideoError(true);
-    v.addEventListener("error", onErr);
-    return () => v.removeEventListener("error", onErr);
-  }, []);
-
-  const streamState = !streaming ? "idle" : videoError ? "error" : "active";
 
   return (
     <>
@@ -456,46 +404,29 @@ export default function StreamViewer() {
       <div className="app">
 
         <div className="header">
-          <div className={`header-dot ${streaming && !videoError ? "active" : videoError ? "error" : ""}`} />
+          <div className={`header-dot ${
+            streamState === "active" ? "active" :
+            streamState === "error"  ? "error"  : ""
+          }`} />
           <span className="header-title">VisionGate — Live Monitor</span>
         </div>
 
-        <div className="input-row">
-          <span className="input-label">HLS</span>
-          <input
-            className="url-input"
-            value={hlsUrl}
-            onChange={e => setHlsUrl(e.target.value)}
-            placeholder="http://localhost:8888/camera/index.m3u8"
-            disabled={streaming}
-          />
-          <button className={`action-btn ${streaming ? "stop" : ""}`} onClick={toggleStream}>
-            {streaming ? "STOP" : "PLAY"}
-          </button>
-        </div>
-
-        <div className="input-row">
-          <span className="input-label">WS</span>
-          <input
-            className="url-input"
-            value={wsUrl}
-            onChange={e => setWsUrl(e.target.value)}
-            placeholder="ws://localhost:8765"
-            disabled={wsConnected}
-          />
-          <button className={`action-btn ${wsConnected ? "stop" : ""}`} onClick={toggleWs}>
-            {wsConnected ? "DISCONNECT" : "CONNECT"}
-          </button>
-        </div>
-
         <div className="status-bar">
-          <div className={`status-item ${streaming ? "on" : ""}`}>
-            <div className={`pip ${streaming && !videoError ? "green" : videoError ? "red" : streaming ? "yellow" : ""}`} />
-            STREAM {streaming ? (videoError ? "ERROR" : "LIVE") : "IDLE"}
+          <div className={`status-item ${streamState === "active" ? "on" : ""}`}>
+            <div className={`pip ${
+              streamState === "active"     ? "green"  :
+              streamState === "error"      ? "red"    :
+              streamState === "connecting" ? "yellow" : ""
+            }`} />
+            STREAM {
+              streamState === "active"     ? "LIVE"       :
+              streamState === "error"      ? "ERROR"      :
+              streamState === "connecting" ? "CONNECTING" : "IDLE"
+            }
           </div>
           <div className={`status-item ${wsConnected ? "on" : ""}`}>
-            <div className={`pip ${wsConnected ? "green" : ""}`} />
-            AI ENGINE {wsConnected ? "CONNECTED" : "OFFLINE"}
+            <div className={`pip ${wsConnected ? "green" : "yellow"}`} />
+            AI ENGINE {wsConnected ? "CONNECTED" : "CONNECTING"}
           </div>
           <div className={`status-item ${detections.length > 0 ? "on" : ""}`}>
             <div className={`pip ${detections.length > 0 ? "green" : ""}`} />
@@ -514,14 +445,26 @@ export default function StreamViewer() {
                   <polygon points="5,3 19,12 5,21" />
                 </svg>
               </div>
-              <span className="idle-text">Enter HLS URL and press play</span>
+              <span className="idle-text">Connecting to stream...</span>
+            </div>
+          )}
+
+          {streamState === "connecting" && (
+            <div className="idle-overlay">
+              <div className="idle-ring">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              </div>
+              <span className="idle-text">Negotiating WebRTC...</span>
             </div>
           )}
 
           {streamState === "error" && (
             <div className="error-overlay">
               <span className="error-title">STREAM ERROR</span>
-              <span className="error-sub">Check URL or MediaMTX</span>
+              <span className="error-sub">Check MediaMTX or serveo tunnel</span>
             </div>
           )}
         </div>
@@ -536,7 +479,7 @@ export default function StreamViewer() {
           <div className="det-list">
             {detections.length === 0 ? (
               <div className="det-empty">
-                {wsConnected ? "— awaiting detections" : "— connect AI engine to see detections"}
+                {wsConnected ? "— awaiting detections" : "— connecting to AI engine"}
               </div>
             ) : detections.map((f, i) => (
               <div className="det-item" key={i}>
