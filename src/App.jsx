@@ -15,7 +15,7 @@ const LS_THEME = "vg-theme";
 export default function App() {
   // ── Theme ──────────────────────────────────────────────────────
   const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem(LS_THEME) || "dark";
+    const saved = localStorage.getItem(LS_THEME) || "light";
     document.documentElement.setAttribute("data-theme", saved);
     return saved;
   });
