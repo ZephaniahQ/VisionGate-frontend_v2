@@ -121,7 +121,32 @@ export default function StreamViewer({
     async function startWebRTC() {
       log("info", "RTC", `Connecting → ${whepUrl}`);
       try {
-        pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+        // pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+        pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: "stun:stun.metered.ca:80" },
+            {
+              urls: "turn:global.relay.metered.ca:80",
+              username: "ecca5a752066b7f41d4c9026",
+              credential: "sbXl7IhPM9P3U6WU",
+            },
+            {
+              urls: "turn:global.relay.metered.ca:80?transport=tcp",
+              username: "ecca5a752066b7f41d4c9026",
+              credential: "sbXl7IhPM9P3U6WU",
+            },
+            {
+              urls: "turn:global.relay.metered.ca:443",
+              username: "ecca5a752066b7f41d4c9026",
+              credential: "sbXl7IhPM9P3U6WU",
+            },
+            {
+              urls: "turns:global.relay.metered.ca:443?transport=tcp",
+              username: "ecca5a752066b7f41d4c9026",
+              credential: "sbXl7IhPM9P3U6WU",
+            },
+          ],
+        });
         pcRef.current = pc;
         pc.addTransceiver("video", { direction: "recvonly" });
         pc.addTransceiver("audio", { direction: "recvonly" });
