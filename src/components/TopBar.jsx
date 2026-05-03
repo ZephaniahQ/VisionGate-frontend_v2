@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
+import { NavLink } from "react-router-dom";
 
-// Sun icon
 function SunIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -15,7 +15,6 @@ function SunIcon() {
   );
 }
 
-// Moon icon
 function MoonIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -24,7 +23,6 @@ function MoonIcon() {
   );
 }
 
-// Bug icon for debug
 function BugIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -36,9 +34,15 @@ function BugIcon() {
   );
 }
 
-export default function TopBar({ streamActive, streamError, theme, onThemeToggle, debugOpen, onDebugToggle }) {
+export default function TopBar({
+  streamActive,
+  streamError,
+  theme,
+  onThemeToggle,
+  debugOpen,
+  onDebugToggle,
+}) {
   const [clock, setClock] = useState(new Date());
-
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(t);
@@ -46,36 +50,48 @@ export default function TopBar({ streamActive, streamError, theme, onThemeToggle
 
   return (
     <div className="topbar">
-      <div className="topbar-left">
-        <div className={`header-dot ${streamActive ? "active" : streamError ? "error" : ""}`} />
-        <span className="header-title">VisionGate — Live Dashboard</span>
+      {/* Row 1: identity bar */}
+      <div className="topbar-main">
+        <div className="topbar-left">
+          <div className={`header-dot ${streamActive ? "active" : streamError ? "error" : ""}`} />
+          <span className="header-title">VisionGate</span>
+        </div>
+
+        <div className="topbar-right">
+          <span className="topbar-time">
+            {clock.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+            {"  "}
+            {clock.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          </span>
+          <button
+            className="topbar-btn"
+            onClick={onThemeToggle}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          </button>
+          <button
+            className={`topbar-btn ${debugOpen ? "active" : ""}`}
+            onClick={onDebugToggle}
+            title="Debug panel"
+          >
+            <BugIcon />
+          </button>
+        </div>
       </div>
 
-      <div className="topbar-right">
-        <span className="topbar-time">
-          {clock.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-          {"  "}
-          {clock.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-        </span>
-
-        {/* Theme toggle */}
-        <button
-          className="topbar-btn"
-          onClick={onThemeToggle}
-          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-        >
-          {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-        </button>
-
-        {/* Debug toggle */}
-        <button
-          className={`topbar-btn ${debugOpen ? "active" : ""}`}
-          onClick={onDebugToggle}
-          title="Debug panel"
-        >
-          <BugIcon />
-        </button>
-      </div>
+      {/* Row 2: tab strip — sits flush on the bottom border of the topbar */}
+      <nav className="topbar-tabs">
+        <NavLink to="/" end className={({ isActive }) => `topbar-tab${isActive ? " topbar-tab--active" : ""}`}>
+          Dashboard
+        </NavLink>
+        <NavLink to="/report" className={({ isActive }) => `topbar-tab${isActive ? " topbar-tab--active" : ""}`}>
+          Reports
+        </NavLink>
+        <NavLink to="/search" className={({ isActive }) => `topbar-tab${isActive ? " topbar-tab--active" : ""}`}>
+          Search
+        </NavLink>
+      </nav>
     </div>
   );
 }

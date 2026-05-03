@@ -76,15 +76,64 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--sans)
 /* ════════════════════════════════════════════════
    TOP BAR
    ════════════════════════════════════════════════ */
+
+/* Outer shell — two rows: identity row + tab strip */
 .topbar {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+
+/* Row 1 — logo/status left, clock+buttons right */
+.topbar-main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 4px;
+  padding-bottom: 10px;
 }
+
 .topbar-left  { display: flex; align-items: center; gap: 10px; }
 .topbar-right { display: flex; align-items: center; gap: 8px; }
 
+/* Row 2 — tab strip, pulled 1px down to overdraw the border */
+.topbar-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  margin-bottom: -1px;
+}
+
+.topbar-tab {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--text-muted);
+  padding: 6px 16px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.topbar-tab:hover {
+  color: var(--text-dim);
+  background: var(--surface);
+}
+
+/* Active tab sits above the border line, merges with the surface below */
+.topbar-tab--active {
+  color: var(--accent);
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: 0 1px 0 var(--surface);
+}
+
+/* Status dot */
 .header-dot {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--text-muted); flex-shrink: 0;

@@ -1,12 +1,13 @@
 import { useState, useCallback, useRef } from "react";
+import { Routes, Route } from "react-router-dom";
 import "./styles/global.css";
 
-import TopBar        from "./components/TopBar";
-import StreamViewer  from "./components/StreamViewer";
-import StatCards     from "./components/StatCards";
-import EmployeeTable from "./components/EmployeeTable";
-import VisitorTable  from "./components/VisitorTable";
-import DebugPanel    from "./components/DebugPanel";
+import TopBar     from "./components/TopBar";
+import DebugPanel from "./components/DebugPanel";
+
+import DashboardPage from "./pages/DashboardPage";
+import ReportPage    from "./pages/ReportPage";
+import SearchPage    from "./pages/SearchPage";
 
 import { MOCK_EMPLOYEES, MOCK_VISITORS } from "./data/mock";
 
@@ -35,41 +36,31 @@ export default function App() {
   const logIdRef = useRef(0);
 
   const addLog = useCallback((level, src, msg) => {
-    const ts = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const ts = new Date().toLocaleTimeString("en-US", {
+      hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
     setLogs(prev => {
       const entry = { id: logIdRef.current++, ts, level, src, msg };
-      // keep last 100 lines
       return prev.length >= 100 ? [...prev.slice(1), entry] : [...prev, entry];
     });
   }, []);
 
-  // URL overrides (lifted from DebugPanel, passed as props to StreamViewer)
+  // ── URL overrides (passed down to DashboardPage → StreamViewer) ─
   const [whepUrl,       setWhepUrl]       = useState("");
   const [supabaseUrl,   setSupabaseUrl]   = useState("");
   const [wsUrlOverride, setWsUrlOverride] = useState("");
-  // bump these to force-restart connections
   const [rtcKey, setRtcKey] = useState(0);
   const [wsKey,  setWsKey]  = useState(0);
 
-  function handleApplyWhep(url) {
-    setWhepUrl(url);
-    setRtcKey(k => k + 1);
-  }
-  function handleApplySupabase(url) {
-    setSupabaseUrl(url);
-    setWsKey(k => k + 1);
-  }
-  function handleApplyWsOverride(url) {
-    setWsUrlOverride(url);
-    setWsKey(k => k + 1);
-  }
+  function handleApplyWhep(url)        { setWhepUrl(url);       setRtcKey(k => k + 1); }
+  function handleApplySupabase(url)    { setSupabaseUrl(url);   setWsKey(k => k + 1); }
+  function handleApplyWsOverride(url)  { setWsUrlOverride(url); setWsKey(k => k + 1); }
 
   // ── Stream / detection state ───────────────────────────────────
   const [streamActive, setStreamActive] = useState(false);
   const [streamError,  setStreamError]  = useState(false);
-  const [detections,   setDetections]   = useState([]);
-  const [employees,    setEmployees]     = useState(MOCK_EMPLOYEES);
-  const [visitors,     setVisitors]      = useState(MOCK_VISITORS);
+  const [employees,    setEmployees]    = useState(MOCK_EMPLOYEES);
+  const [visitors,     setVisitors]     = useState(MOCK_VISITORS);
 
   function handleStreamState(state) {
     setStreamActive(state === "active");
@@ -93,8 +84,18 @@ export default function App() {
     }
   }
 
+  // ── Shared stream override props (passed to DashboardPage) ─────
+  const streamOverrides = {
+    whepUrl:       whepUrl || undefined,
+    wsUrlOverride,
+    supabaseUrl:   supabaseUrl || undefined,
+    rtcKey,
+    wsKey,
+  };
+
   return (
     <div className="dashboard">
+      {/* TopBar is always visible on every page */}
       <TopBar
         streamActive={streamActive}
         streamError={streamError}
@@ -104,22 +105,7 @@ export default function App() {
         onDebugToggle={() => setDebugOpen(o => !o)}
       />
 
-      <div className="monitor-grid">
-        <StreamViewer
-          onDetections={setDetections}
-          onStreamState={handleStreamState}
-          onWsMessage={handleWsMessage}
-          onLog={addLog}
-          whepUrl={whepUrl || undefined}
-          wsUrlOverride={wsUrlOverride}
-          supabaseUrl={supabaseUrl || undefined}
-          rtcKey={rtcKey}
-          wsKey={wsKey}
-        />
-        <StatCards employees={employees} visitors={visitors} />
-      </div>
-
-      {/* Debug panel — full width, below grid */}
+      {/* Debug panel sits below TopBar, above page content */}
       <DebugPanel
         open={debugOpen}
         logs={logs}
@@ -129,8 +115,24 @@ export default function App() {
         onApplyWsOverride={handleApplyWsOverride}
       />
 
-      <EmployeeTable records={employees} employees={employees} visitors={visitors} />
-      <VisitorTable  records={visitors}  visitors={visitors} />
+      {/* Page content */}
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <DashboardPage
+              employees={employees}
+              visitors={visitors}
+              streamOverrides={streamOverrides}
+              onStreamState={handleStreamState}
+              onWsMessage={handleWsMessage}
+              onLog={addLog}
+            />
+          }
+        />
+        <Route path="/report"  element={<ReportPage />} />
+        <Route path="/search"  element={<SearchPage />} />
+      </Routes>
     </div>
   );
 }
