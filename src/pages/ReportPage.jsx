@@ -11,11 +11,28 @@ function toDateString(date) {
   return date.toISOString().split("T")[0];
 }
 
+const EMPLOYEE_COLS = [
+  { key: "display_name", label: "Name" },
+  { key: "department", label: "Department" },
+  { key: "first_seen_at", label: "Check In" },
+  { key: "last_seen_at", label: "Check Out" },
+  { key: "attendance_status", label: "Status" },
+  { key: "is_late", label: "Late" },
+];
+
+const VISITOR_COLS = [
+  { key: "display_name", label: "Name" },
+  { key: "first_seen_at", label: "Check In" },
+  { key: "last_seen_at", label: "Check Out" },
+  { key: "attendance_status", label: "Status" },
+];
+
 async function triggerExport(type, date, rows) {
   const columns = type === "employee" ? EMPLOYEE_COLS : VISITOR_COLS;
+  const safeRows = Array.isArray(rows) ? rows : [];
   const csvContent = [
     columns.map(col => col.label).join(','),
-    ...rows.map(row => columns.map(col => {
+    ...safeRows.map(row => columns.map(col => {
       let val = row[col.key];
       if (col.key === "attendance_status") {
         val = row.is_late ? "late" : row.in_building ? "present" : "absent";
@@ -121,22 +138,6 @@ function PreviewTable({ rows, columns, loading, error }) {
   );
 }
 
-const EMPLOYEE_COLS = [
-  { key: "display_name", label: "Name" },
-  { key: "department", label: "Department" },
-  { key: "first_seen_at", label: "Check In" },
-  { key: "last_seen_at", label: "Check Out" },
-  { key: "attendance_status", label: "Status" },
-  { key: "is_late", label: "Late" },
-];
-
-const VISITOR_COLS = [
-  { key: "display_name", label: "Name" },
-  { key: "first_seen_at", label: "Check In" },
-  { key: "last_seen_at", label: "Check Out" },
-  { key: "attendance_status", label: "Status" },
-];
-
 function ReportPageContent() {
   const today = toDateString(new Date());
   const [date, setDate] = useState(today);
@@ -191,7 +192,24 @@ function ReportPageContent() {
     setExportState((s) => ({ ...s, [type]: "loading" }));
     setExportError((s) => ({ ...s, [type]: null }));
     try {
-      await triggerExport(type, date);
+      let rowsToExport = rows;
+      if (activeTab !== type) {
+        const isEmployee = type === "employee";
+        const { data, error } = await supabase
+          .from("daily_records")
+          .select("*")
+          .eq("record_date", date)
+          .eq("person_type", isEmployee ? "employee" : "visitor")
+          .limit(1000);
+        if (error) throw error;
+        rowsToExport = data || [];
+      }
+
+      if (!rowsToExport || rowsToExport.length === 0) {
+        throw new Error("No records available to export for this date.");
+      }
+
+      await triggerExport(type, date, rowsToExport);
       setExportState((s) => ({ ...s, [type]: "success" }));
       setTimeout(
         () => setExportState((s) => ({ ...s, [type]: "idle" })),
