@@ -8,7 +8,7 @@ function SearchPageContent() {
   const [results, setResults] = useState([]);
   const [error, setError] = useState("");
 
-  const API_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/face-match`;
+  const API_URL = "https://ekenepjdjhsutkwbvcch.supabase.co/functions/v1/face-match";
 
   const callAPI = async (payload, type) => {
     setLoading(true);
@@ -17,15 +17,13 @@ function SearchPageContent() {
     setMode(type);
 
     try {
-      const token =
-        localStorage.getItem("sb-access-token") ||
-        import.meta.env.VITE_SUPABASE_ANON_KEY;
+      
 
       const res = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrZW5lcGpkamhzdXRrd2J2Y2NoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1ODIyMDEsImV4cCI6MjA5MDE1ODIwMX0.iFXYc6uTyHJZltboGAQtBn0qyDPzRZHkLHxYfDQBZwg",
         },
         body: JSON.stringify(payload),
       });
