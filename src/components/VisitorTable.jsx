@@ -1,4 +1,4 @@
-import { visitorFlags, fmt, duration, stayMinutes } from "../utils/helpers";
+import { visitorFlags, fmt } from "../utils/helpers";
 
 function SnapCell({ url, name }) {
   return (
@@ -25,10 +25,20 @@ function Flags({ list }) {
   );
 }
 
+function fmtStay(minutes) {
+  if (minutes == null || minutes <= 0) return null;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m}m`;
+  return `${h}h ${m}m`;
+}
+
 export default function VisitorTable({ records, visitors }) {
-  const visPresent  = visitors?.filter(v => v.is_present).length ?? 0;
-  const visDeparted = visitors?.filter(v => v.exit_time).length ?? 0;
-  const visFlagged  = visitors?.filter(v => v.is_blacklisted).length ?? 0;
+  const visPresent  = (visitors || []).filter(v => v.in_building).length;
+  const visDeparted = (visitors || []).filter(v => !v.in_building && v.first_seen_at).length;
+  const visFlagged  = (visitors || []).filter(v =>
+    v.person_type === "blocked" || (v.stay_minutes ?? 0) > 240
+  ).length;
 
   return (
     <div className="section-block" style={{ marginTop: "8px" }}>
@@ -41,6 +51,7 @@ export default function VisitorTable({ records, visitors }) {
           {visPresent} on-site · {visDeparted} departed · {visFlagged} flagged
         </span>
       </div>
+
       <div className="table-wrap">
         <div className="table-scroll">
           <table>
@@ -48,69 +59,109 @@ export default function VisitorTable({ records, visitors }) {
               <tr>
                 <th>Snapshot</th>
                 <th>ID / Name</th>
-                <th>Purpose</th>
+                <th>Type</th>
                 <th>Arrival</th>
-                <th>Departure</th>
+                <th>Last Seen</th>
                 <th>Stay</th>
-                <th>Direction</th>
+                <th>Status</th>
                 <th>Confidence</th>
                 <th>Flags</th>
               </tr>
             </thead>
             <tbody>
               {records.length === 0 ? (
-                <tr><td colSpan="9" className="table-empty">— no visitor records today</td></tr>
+                <tr>
+                  <td colSpan="9" className="table-empty">— no visitor records today</td>
+                </tr>
               ) : records.map(rec => {
                 const flags = visitorFlags(rec);
-                const mins  = stayMinutes(rec.entry_time);
-                const dur   = rec.exit_time
-                  ? duration(rec.entry_time, rec.exit_time)
-                  : rec.is_present && rec.entry_time
-                    ? duration(rec.entry_time, new Date().toISOString())
-                    : null;
+                const stay  = fmtStay(rec.stay_minutes);
+                const isBlocked = rec.person_type === "blocked";
+                const isUnknown = rec.person_type === "unknown";
+
                 return (
                   <tr key={rec.id}>
-                    <td><SnapCell url={rec.snapshot_url} name={rec.name} /></td>
+                    {/* Snapshot */}
                     <td>
-                      <div className="person-id">{rec.id}</div>
-                      <div className="person-name" style={{
-                        color: rec.is_blacklisted ? "var(--danger)" : undefined
-                      }}>{rec.name}</div>
+                      <SnapCell url={rec.snapshot_url} name={rec.display_name} />
                     </td>
-                    <td><span className="person-dept">{rec.purpose || "—"}</span></td>
+
+                    {/* ID / Name */}
                     <td>
-                      {rec.entry_time
-                        ? <div className="time-val">{fmt(rec.entry_time)}</div>
-                        : <div className="time-none">—</div>}
+                      <div className="person-id" title={rec.person_id}>
+                        {rec.person_id ? rec.person_id.slice(0, 8) + "…" : "—"}
+                      </div>
+                      <div
+                        className="person-name"
+                        style={{ color: isBlocked ? "var(--danger)" : undefined }}
+                      >
+                        {rec.display_name || (isUnknown ? "Unknown Person" : "—")}
+                      </div>
                     </td>
+
+                    {/* Type badge */}
                     <td>
-                      {rec.exit_time
-                        ? <div className="time-val">{fmt(rec.exit_time)}</div>
-                        : rec.is_present
-                          ? <div className="time-none" style={{ color: "var(--blue)" }}>Still In</div>
-                          : <div className="time-none">—</div>}
-                    </td>
-                    <td>
-                      {dur
-                        ? <div className={`time-val ${!rec.exit_time && mins > 240 ? "stay-warn" : "stay-ok"}`}>
-                            {dur}
-                          </div>
-                        : <div className="time-none">—</div>}
-                    </td>
-                    <td>
-                      <span className={`dir-badge ${rec.exit_time ? "dir-exit" : "dir-entry"}`}>
-                        {rec.exit_time ? "Exited" : "Entry"}
+                      <span className={`dir-badge ${
+                        isBlocked ? "dir-exit"
+                        : isUnknown ? "dir-unknown"
+                        : "dir-entry"
+                      }`}>
+                        {rec.person_type.charAt(0).toUpperCase() + rec.person_type.slice(1)}
                       </span>
                     </td>
+
+                    {/* Arrival */}
                     <td>
-                      {rec.confidence != null
-                        ? <span className="conf-val" style={{
-                            color: rec.confidence > 0.95 ? "var(--accent)"
-                                 : rec.confidence > 0.8  ? "var(--warn)"
-                                 : "var(--danger)"
-                          }}>{Math.round(rec.confidence * 100)}%</span>
-                        : <span className="time-none">—</span>}
+                      {rec.first_seen_at
+                        ? <div className="time-val">{fmt(rec.first_seen_at)}</div>
+                        : <div className="time-none">—</div>}
                     </td>
+
+                    {/* Last Seen */}
+                    <td>
+                      {rec.in_building ? (
+                        <div className="time-none" style={{ color: "var(--blue)" }}>Still In</div>
+                      ) : rec.last_seen_at ? (
+                        <div className="time-val">{fmt(rec.last_seen_at)}</div>
+                      ) : (
+                        <div className="time-none">—</div>
+                      )}
+                    </td>
+
+                    {/* Stay */}
+                    <td>
+                      {stay ? (
+                        <div className={`time-val ${(rec.stay_minutes ?? 0) > 240 ? "stay-warn" : "stay-ok"}`}>
+                          {stay}
+                        </div>
+                      ) : (
+                        <div className="time-none">—</div>
+                      )}
+                    </td>
+
+                    {/* Status */}
+                    <td>
+                      <span className={`dir-badge ${rec.in_building ? "dir-entry" : "dir-exit"}`}>
+                        {rec.in_building ? "On Premises" : "Left"}
+                      </span>
+                    </td>
+
+                    {/* Confidence */}
+                    <td>
+                      {rec.confidence != null ? (
+                        <span className="conf-val" style={{
+                          color: rec.confidence > 0.95 ? "var(--accent)"
+                               : rec.confidence > 0.8  ? "var(--warn)"
+                               : "var(--danger)"
+                        }}>
+                          {Math.round(rec.confidence * 100)}%
+                        </span>
+                      ) : (
+                        <span className="time-none">—</span>
+                      )}
+                    </td>
+
+                    {/* Flags */}
                     <td><Flags list={flags} /></td>
                   </tr>
                 );

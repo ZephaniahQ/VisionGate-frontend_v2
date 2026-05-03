@@ -5,38 +5,22 @@ import StatCards     from "../components/StatCards";
 import EmployeeTable from "../components/EmployeeTable";
 import VisitorTable  from "../components/VisitorTable";
 
-/**
- * DashboardPage
- *
- * Owns only the dashboard layout. All shared state (employees, visitors,
- * stream status) lives in App.jsx and is passed down as props so the
- * Realtime subscriptions and stream connection survive page navigation.
- *
- * Props:
- *   employees       DailyRecord[]   — employee rows from App state
- *   visitors        DailyRecord[]   — visitor rows from App state
- *   streamOverrides object          — URL/key overrides from DebugPanel
- *   onStreamState   fn(state)       — reports 'active' | 'error' | 'idle' up to App
- *   onWsMessage     fn(type,record) — forwards WS updates up to App
- *   onLog           fn(level,src,msg)
- */
 export default function DashboardPage({
-  employees,
-  visitors,
+  employees,        // daily_records rows — person_type === 'employee'
+  absentEmployees,  // shaped employee rows with no record today
+  visitors,         // daily_records rows — visitor | unknown | blocked
+  dbLoading,
   streamOverrides,
   onStreamState,
   onWsMessage,
   onLog,
 }) {
   const [detections, setDetections] = useState([]);
+  const { whepUrl, wsUrlOverride, supabaseUrl, rtcKey, wsKey } = streamOverrides;
 
-  const {
-    whepUrl,
-    wsUrlOverride,
-    supabaseUrl,
-    rtcKey,
-    wsKey,
-  } = streamOverrides;
+  // Combine present + absent into one list for the ledger
+  // Present employees always come first (sorted by first_seen_at desc from App)
+  const allEmployeeRows = [...employees, ...absentEmployees];
 
   return (
     <>
@@ -52,11 +36,35 @@ export default function DashboardPage({
           rtcKey={rtcKey}
           wsKey={wsKey}
         />
-        <StatCards employees={employees} visitors={visitors} />
+        <StatCards
+          employees={allEmployeeRows}
+          visitors={visitors}
+        />
       </div>
 
-      <EmployeeTable records={employees} employees={employees} visitors={visitors} />
-      <VisitorTable  records={visitors}  visitors={visitors} />
+      {dbLoading ? (
+        <div style={{
+          textAlign: "center",
+          padding: "2rem",
+          color: "var(--text-dim)",
+          fontSize: 13,
+          fontFamily: "'IBM Plex Mono', monospace",
+          letterSpacing: "0.05em",
+        }}>
+          Loading daily records…
+        </div>
+      ) : (
+        <>
+          <EmployeeTable
+            records={allEmployeeRows}
+            employees={allEmployeeRows}
+          />
+          <VisitorTable
+            records={visitors}
+            visitors={visitors}
+          />
+        </>
+      )}
     </>
   );
 }

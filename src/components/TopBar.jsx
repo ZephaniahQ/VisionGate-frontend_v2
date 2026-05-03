@@ -34,6 +34,17 @@ function BugIcon() {
   );
 }
 
+// Beaker / flask icon for the tester panel
+function FlaskIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M9 3h6m-3 0v7l-4 7a1 1 0 0 0 .9 1.5h8.2a1 1 0 0 0 .9-1.5L14 10V3"/>
+      <circle cx="10" cy="17" r="0.8" fill="currentColor"/>
+      <circle cx="13" cy="15" r="0.8" fill="currentColor"/>
+    </svg>
+  );
+}
+
 export default function TopBar({
   streamActive,
   streamError,
@@ -41,6 +52,8 @@ export default function TopBar({
   onThemeToggle,
   debugOpen,
   onDebugToggle,
+  testerOpen,
+  onTesterToggle,
 }) {
   const [clock, setClock] = useState(new Date());
   useEffect(() => {
@@ -70,6 +83,15 @@ export default function TopBar({
           >
             {theme === "dark" ? <SunIcon /> : <MoonIcon />}
           </button>
+          {/* Tester toggle — amber accent when open */}
+          <button
+            className={`topbar-btn ${testerOpen ? "active" : ""}`}
+            onClick={onTesterToggle}
+            title="Realtime tester"
+            style={testerOpen ? { color: "#f59e0b", borderColor: "#f59e0b40" } : undefined}
+          >
+            <FlaskIcon />
+          </button>
           <button
             className={`topbar-btn ${debugOpen ? "active" : ""}`}
             onClick={onDebugToggle}
@@ -80,7 +102,7 @@ export default function TopBar({
         </div>
       </div>
 
-      {/* Row 2: tab strip — sits flush on the bottom border of the topbar */}
+      {/* Row 2: tab strip */}
       <nav className="topbar-tabs">
         <NavLink to="/" end className={({ isActive }) => `topbar-tab${isActive ? " topbar-tab--active" : ""}`}>
           Dashboard
