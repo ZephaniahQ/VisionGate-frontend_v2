@@ -1,20 +1,6 @@
+import { useState } from "react";
 import { visitorFlags, fmt } from "../utils/helpers";
-
-function SnapCell({ url, name }) {
-  return (
-    <div className="snap-cell">
-      {url ? (
-        <img src={url} alt={name} className="snap-img" />
-      ) : (
-        <div className="snap-placeholder">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-          </svg>
-        </div>
-      )}
-    </div>
-  );
-}
+import SnapCell, { SnapshotModal } from "./SnapCell";
 
 function Flags({ list }) {
   if (!list.length) return <span className="time-none">—</span>;
@@ -34,6 +20,8 @@ function fmtStay(minutes) {
 }
 
 export default function VisitorTable({ records, visitors }) {
+  const [modal, setModal] = useState(null); // { url, name } | null
+
   const visPresent  = (visitors || []).filter(v => v.in_building).length;
   const visDeparted = (visitors || []).filter(v => !v.in_building && v.first_seen_at).length;
   const visFlagged  = (visitors || []).filter(v =>
@@ -42,6 +30,15 @@ export default function VisitorTable({ records, visitors }) {
 
   return (
     <div className="section-block" style={{ marginTop: "8px" }}>
+      {/* Lightbox */}
+      {modal && (
+        <SnapshotModal
+          url={modal.url}
+          name={modal.name}
+          onClose={() => setModal(null)}
+        />
+      )}
+
       <div className="section-header">
         <div className="section-title-wrap">
           <span className="section-badge badge-vis">Visitors</span>
@@ -74,8 +71,8 @@ export default function VisitorTable({ records, visitors }) {
                   <td colSpan="9" className="table-empty">— no visitor records today</td>
                 </tr>
               ) : records.map(rec => {
-                const flags = visitorFlags(rec);
-                const stay  = fmtStay(rec.stay_minutes);
+                const flags     = visitorFlags(rec);
+                const stay      = fmtStay(rec.stay_minutes);
                 const isBlocked = rec.person_type === "blocked";
                 const isUnknown = rec.person_type === "unknown";
 
@@ -83,7 +80,11 @@ export default function VisitorTable({ records, visitors }) {
                   <tr key={rec.id}>
                     {/* Snapshot */}
                     <td>
-                      <SnapCell url={rec.snapshot_url} name={rec.display_name} />
+                      <SnapCell
+                        url={rec.snapshot_url}
+                        name={rec.display_name}
+                        onExpand={(url, name) => setModal({ url, name })}
+                      />
                     </td>
 
                     {/* ID / Name */}

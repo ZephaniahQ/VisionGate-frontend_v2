@@ -1,20 +1,6 @@
-import { employeeFlags, fmt, duration } from "../utils/helpers";
-
-function SnapCell({ url, name }) {
-  return (
-    <div className="snap-cell">
-      {url ? (
-        <img src={url} alt={name} className="snap-img" />
-      ) : (
-        <div className="snap-placeholder">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-          </svg>
-        </div>
-      )}
-    </div>
-  );
-}
+import { useState } from "react";
+import { employeeFlags, fmt } from "../utils/helpers";
+import SnapCell, { SnapshotModal } from "./SnapCell";
 
 function Flags({ list }) {
   if (!list.length) return <span className="time-none">—</span>;
@@ -25,7 +11,6 @@ function Flags({ list }) {
   );
 }
 
-// Format stay_minutes (integer) into "Xh Ym"
 function fmtStay(minutes) {
   if (minutes == null || minutes <= 0) return null;
   const h = Math.floor(minutes / 60);
@@ -35,13 +20,7 @@ function fmtStay(minutes) {
 }
 
 export default function EmployeeTable({ records, employees }) {
-  // Use real daily_records fields:
-  //   in_building  → currently present (no departure logic yet per spec)
-  //   _isAbsent    → sentinel added by App for absent rows
-  //   first_seen_at → arrival
-  //   last_seen_at  → last seen / departure
-  //   display_name  → name to show
-  //   person_id     → uuid from employees table
+  const [modal, setModal] = useState(null); // { url, name } | null
 
   const empPresent  = (employees || []).filter(e => e.in_building && !e._isAbsent).length;
   const empDeparted = (employees || []).filter(e => !e.in_building && !e._isAbsent && e.first_seen_at).length;
@@ -49,6 +28,15 @@ export default function EmployeeTable({ records, employees }) {
 
   return (
     <div className="section-block" style={{ marginTop: "8px" }}>
+      {/* Lightbox */}
+      {modal && (
+        <SnapshotModal
+          url={modal.url}
+          name={modal.name}
+          onClose={() => setModal(null)}
+        />
+      )}
+
       <div className="section-header">
         <div className="section-title-wrap">
           <span className="section-badge badge-emp">Employees</span>
@@ -80,17 +68,21 @@ export default function EmployeeTable({ records, employees }) {
                   <td colSpan="8" className="table-empty">— no employee records today</td>
                 </tr>
               ) : records.map(rec => {
-                const flags  = employeeFlags(rec);
-                const stay   = fmtStay(rec.stay_minutes);
+                const flags = employeeFlags(rec);
+                const stay  = fmtStay(rec.stay_minutes);
 
                 return (
                   <tr key={rec.id}>
                     {/* Snapshot */}
                     <td>
-                      <SnapCell url={rec.snapshot_url} name={rec.display_name} />
+                      <SnapCell
+                        url={rec.snapshot_url}
+                        name={rec.display_name}
+                        onExpand={(url, name) => setModal({ url, name })}
+                      />
                     </td>
 
-                    {/* ID / Name — show short person_id + display_name */}
+                    {/* ID / Name */}
                     <td>
                       <div className="person-id" title={rec.person_id}>
                         {rec._isAbsent
@@ -100,9 +92,7 @@ export default function EmployeeTable({ records, employees }) {
                             : "—"
                         }
                       </div>
-                      <div className="person-name">
-                        {rec.display_name || "Unknown"}
-                      </div>
+                      <div className="person-name">{rec.display_name || "Unknown"}</div>
                     </td>
 
                     {/* Department */}
@@ -130,7 +120,7 @@ export default function EmployeeTable({ records, employees }) {
                       )}
                     </td>
 
-                    {/* Duration — use pre-computed stay_minutes */}
+                    {/* Duration */}
                     <td>
                       {rec._isAbsent ? (
                         <div className="time-none">—</div>
@@ -160,7 +150,7 @@ export default function EmployeeTable({ records, employees }) {
                       )}
                     </td>
 
-                    {/* Status / Flags */}
+                    {/* Flags */}
                     <td><Flags list={flags} /></td>
                   </tr>
                 );
